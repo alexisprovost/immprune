@@ -13,15 +13,12 @@ import (
 
 func GetAssets(onlyVideos bool) ([]types.Asset, error) {
 	if runtime.GOOS != "darwin" {
-		return nil, fmt.Errorf("macOS seulement pour l'instant (osxphotos). Utilise --folder sur Linux/Windows plus tard")
+		return nil, fmt.Errorf("macOS only for now")
 	}
-	cmd := exec.Command("osxphotos", "query", "--json")
-	if onlyVideos {
-		cmd.Args = append(cmd.Args, "--movies")
-	}
+	cmd := exec.Command("osascript", "-l", "JavaScript", "-e", photosJXAScript)
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("installe osxphotos : pip install osxphotos")
+		return nil, fmt.Errorf("unable to read Photos library via macOS Automation (check Photos/Automation permissions): %w", err)
 	}
 
 	var raw []struct {
@@ -32,11 +29,16 @@ func GetAssets(onlyVideos bool) ([]types.Asset, error) {
 		IsMovie          bool   `json:"ismovie"`
 		Path             string `json:"path,omitempty"`
 	}
-	json.Unmarshal(out, &raw)
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, fmt.Errorf("invalid Photos response: %w", err)
+	}
 
 	var assets []types.Asset
 	for _, r := range raw {
 		dt, _ := time.Parse(time.RFC3339, r.Date)
+		if onlyVideos && !r.IsMovie {
+			continue
+		}
 		assets = append(assets, types.Asset{
 			UUID:             r.UUID,
 			OriginalFilename: strings.ToLower(r.OriginalFilename),
@@ -48,3 +50,37 @@ func GetAssets(onlyVideos bool) ([]types.Asset, error) {
 	}
 	return assets, nil
 }
+
+const photosJXAScript = `
+const photos = Application("Photos");
+
+function safeCall(fn, fallback) {
+	try {
+		const value = fn();
+		return value === undefined || value === null ? fallback : value;
+	} catch (e) {
+		return fallback;
+	}
+}
+
+const items = photos.mediaItems();
+const result = [];
+
+for (let i = 0; i < items.length; i++) {
+	const item = items[i];
+	const mediaType = String(safeCall(() => item.mediaType(), "")).toLowerCase();
+	const dateValue = safeCall(() => item.date(), null);
+	const isoDate = dateValue ? new Date(dateValue).toISOString() : "";
+
+	result.push({
+		uuid: String(safeCall(() => item.id(), "")),
+		original_filename: String(safeCall(() => item.filename(), "")),
+		original_filesize: 0,
+		date: isoDate,
+		ismovie: mediaType.indexOf("video") >= 0,
+		path: ""
+	});
+}
+
+JSON.stringify(result);
+`

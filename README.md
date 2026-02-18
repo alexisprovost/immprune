@@ -4,6 +4,8 @@ Safely free up iCloud Photos storage by listing files that already exist in Immi
 
 `immprune` is read-only for iCloud Photos: it never deletes files by itself.
 
+No Python or `osxphotos` dependency is required.
+
 ## Install
 
 No Go is required for end users.
@@ -38,6 +40,19 @@ go install github.com/alexisprovost/immprune/cmd/immprune@latest
 immprune compare --only-videos --after 2024-01-01 --limit 500
 ```
 
+Interactive smart UI (enabled by default):
+
+- Choose content scope (all or videos only)
+- Choose scan style (single pass or year batches)
+- Set year range and years per batch
+- Set output file path
+
+Disable interactive UI:
+
+```bash
+immprune compare --ui=false --only-videos --after 2024-01-01 --limit 500
+```
+
 On first run, setup is interactive and writes config to:
 
 ```text
@@ -67,21 +82,16 @@ make ci
 make dist
 ```
 
-Artifacts are generated in `dist/` for:
+By default, local `make dist` still generates multiple binaries for development.
 
-- linux/amd64
-- linux/arm64
-- darwin/amd64
-- darwin/arm64
-- windows/amd64
-- windows/arm64
+In CI/CD releases, only `darwin/arm64` is built and published.
 
 ## CI/CD and releases
 
 GitHub Actions pipeline does the following:
 
 1. Runs checks (`go test`, `go vet`) on pushes and pull requests.
-2. Only on tag push (`v*`), builds binaries for all supported OS/ARCH targets.
+2. Only on tag push (`v*`), builds `darwin/arm64` binary.
 3. Only on tag push (`v*`), creates a GitHub Release and uploads all build artifacts.
 
 Create a release with:

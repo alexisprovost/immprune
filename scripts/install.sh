@@ -17,10 +17,9 @@ need_cmd tar
 
 os_name() {
   case "$(uname -s)" in
-    Linux) echo "linux" ;;
     Darwin) echo "darwin" ;;
     *)
-      echo "Error: unsupported OS '$(uname -s)'." >&2
+      echo "Error: unsupported OS '$(uname -s)'. This installer supports macOS only." >&2
       exit 1
       ;;
   esac
@@ -28,10 +27,9 @@ os_name() {
 
 arch_name() {
   case "$(uname -m)" in
-    x86_64|amd64) echo "amd64" ;;
     aarch64|arm64) echo "arm64" ;;
     *)
-      echo "Error: unsupported architecture '$(uname -m)'." >&2
+      echo "Error: unsupported architecture '$(uname -m)'. This installer supports Apple Silicon (arm64) only." >&2
       exit 1
       ;;
   esac

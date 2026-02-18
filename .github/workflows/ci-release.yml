@@ -42,36 +42,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - goos: linux
-            goarch: amd64
-            runner: ubuntu-latest
-            ext: ""
-            archive: tar.gz
-          - goos: linux
-            goarch: arm64
-            runner: ubuntu-24.04-arm
-            ext: ""
-            archive: tar.gz
-          - goos: darwin
-            goarch: amd64
-            runner: ubuntu-latest
-            ext: ""
-            archive: tar.gz
           - goos: darwin
             goarch: arm64
             runner: ubuntu-24.04-arm
             ext: ""
             archive: tar.gz
-          - goos: windows
-            goarch: amd64
-            runner: ubuntu-latest
-            ext: ".exe"
-            archive: zip
-          - goos: windows
-            goarch: arm64
-            runner: ubuntu-24.04-arm
-            ext: ".exe"
-            archive: zip
 
     steps:
       - name: Checkout

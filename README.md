@@ -81,8 +81,8 @@ Artifacts are generated in `dist/` for:
 GitHub Actions pipeline does the following:
 
 1. Runs checks (`go test`, `go vet`) on pushes and pull requests.
-2. Builds binaries for all supported OS/ARCH targets.
-3. On tag push (`v*`), creates a GitHub Release and uploads all build artifacts.
+2. Only on tag push (`v*`), builds binaries for all supported OS/ARCH targets.
+3. Only on tag push (`v*`), creates a GitHub Release and uploads all build artifacts.
 
 Create a release with:
 

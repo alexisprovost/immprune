@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -93,13 +94,17 @@ var compareCmd = &cobra.Command{
 
 		var safe []types.Asset
 		after, _ := time.Parse("2006-01-02", opts.AfterDate)
-		for _, a := range assets {
+		total := len(assets)
+		matchStarted := time.Now()
+		for idx, a := range assets {
 			if opts.AfterDate != "" && !a.Date.After(after) {
+				renderInlineProgress("🧮 Matching", idx+1, total, displayName(a), matchStarted)
 				continue
 			}
 			if opts.UseBatch {
 				y := a.Date.Year()
 				if y < opts.StartYear || y > opts.EndYear {
+					renderInlineProgress("🧮 Matching", idx+1, total, displayName(a), matchStarted)
 					continue
 				}
 			}
@@ -110,7 +115,9 @@ var compareCmd = &cobra.Command{
 			if immichSet[strictKey] || (a.OriginalFilesize == 0 && immichNameDateCount[fallbackKey] == 1) {
 				safe = append(safe, a)
 			}
+			renderInlineProgress("🧮 Matching", idx+1, total, displayName(a), matchStarted)
 		}
+		finishInlineProgress(fmt.Sprintf("🧮 Matching complete: %d safe candidates in %s", len(safe), time.Since(matchStarted).Round(time.Second)))
 
 		sort.Slice(safe, func(i, j int) bool { return safe[i].Date.After(safe[j].Date) })
 
@@ -177,7 +184,7 @@ func collectCompareOptions(cmd *cobra.Command) (compareOptions, error) {
 	if batchChoice == "Year batches" {
 		opts.UseBatch = true
 
-		startYearPrompt := promptui.Prompt{Label: "Start year", Default: "2018"}
+		startYearPrompt := promptui.Prompt{Label: "Start year (Enter for default)", Default: "2018"}
 		startYearRaw, err := startYearPrompt.Run()
 		if err != nil {
 			return opts, err
@@ -187,7 +194,7 @@ func collectCompareOptions(cmd *cobra.Command) (compareOptions, error) {
 			return opts, fmt.Errorf("invalid start year")
 		}
 
-		endYearPrompt := promptui.Prompt{Label: "End year", Default: strconv.Itoa(time.Now().Year())}
+		endYearPrompt := promptui.Prompt{Label: "End year (Enter for default)", Default: strconv.Itoa(time.Now().Year())}
 		endYearRaw, err := endYearPrompt.Run()
 		if err != nil {
 			return opts, err
@@ -200,7 +207,7 @@ func collectCompareOptions(cmd *cobra.Command) (compareOptions, error) {
 			return opts, fmt.Errorf("end year must be >= start year")
 		}
 
-		batchYearsPrompt := promptui.Prompt{Label: "Years per batch", Default: "2"}
+		batchYearsPrompt := promptui.Prompt{Label: "Years per batch (Enter for default)", Default: "2"}
 		batchRaw, err := batchYearsPrompt.Run()
 		if err != nil {
 			return opts, err
@@ -210,7 +217,7 @@ func collectCompareOptions(cmd *cobra.Command) (compareOptions, error) {
 			return opts, fmt.Errorf("invalid years per batch")
 		}
 
-		limitPrompt := promptui.Prompt{Label: "Limit per batch (0 = no limit)", Default: "0"}
+		limitPrompt := promptui.Prompt{Label: "Limit per batch (0 = no limit, Enter for default)", Default: "0"}
 		limitRaw, err := limitPrompt.Run()
 		if err != nil {
 			return opts, err
@@ -226,7 +233,7 @@ func collectCompareOptions(cmd *cobra.Command) (compareOptions, error) {
 		opts.LimitPerSet = limitPerBatch
 	}
 
-	outputPrompt := promptui.Prompt{Label: "Output file", Default: opts.OutputFile}
+	outputPrompt := promptui.Prompt{Label: "Output file (Enter for default)", Default: opts.OutputFile}
 	outputRaw, err := outputPrompt.Run()
 	if err == nil && strings.TrimSpace(outputRaw) != "" {
 		opts.OutputFile = strings.TrimSpace(outputRaw)
@@ -237,11 +244,13 @@ func collectCompareOptions(cmd *cobra.Command) (compareOptions, error) {
 
 func writeBatchedReport(f *os.File, safe []types.Asset, opts compareOptions) {
 	batches := buildYearBatches(opts.StartYear, opts.EndYear, opts.BatchYears)
+	fmt.Printf("📚 Writing %d batches\n", len(batches))
 
-	for _, b := range batches {
+	for idx, b := range batches {
 		start := b[0]
 		end := b[1]
 		var group []types.Asset
+		fmt.Printf("🔹 Batch %d/%d: %d-%d\n", idx+1, len(batches), start, end)
 		for _, a := range safe {
 			y := a.Date.Year()
 			if y >= start && y <= end {
@@ -255,13 +264,18 @@ func writeBatchedReport(f *os.File, safe []types.Asset, opts compareOptions) {
 		}
 
 		fmt.Fprintf(f, "📦 Batch %d-%d | %d candidates\n", start, end, len(group))
-		for _, a := range group {
+		batchStarted := time.Now()
+		for i, a := range group {
+			renderInlineProgress("📝 Writing batch", i+1, len(group), displayName(a), batchStarted)
 			fmt.Fprintf(f, "%s | %d MB | %s | %s | %s\n",
 				a.Date.Format("2006-01-02"),
 				a.OriginalFilesize/1024/1024,
 				a.OriginalFilename,
 				map[bool]string{true: "VIDEO", false: "PHOTO"}[a.IsMovie],
 				a.LocalPath)
+		}
+		if len(group) > 0 {
+			finishInlineProgress(fmt.Sprintf("📝 Batch %d-%d written in %s", start, end, time.Since(batchStarted).Round(time.Second)))
 		}
 		fmt.Fprintln(f)
 	}
@@ -313,6 +327,53 @@ func startBrailleSpinner(label string) func(success bool, doneMessage string) {
 			}
 		})
 	}
+}
+
+func renderInlineProgress(prefix string, current int, total int, item string, startedAt time.Time) {
+	if total <= 0 {
+		return
+	}
+	if len(item) > 42 {
+		item = item[:39] + "..."
+	}
+	percent := (current * 100) / total
+	elapsed := time.Since(startedAt)
+	eta := "--:--"
+	if current > 0 {
+		remaining := total - current
+		if remaining < 0 {
+			remaining = 0
+		}
+		remainingDuration := time.Duration(float64(elapsed) * (float64(remaining) / float64(current)))
+		eta = formatShortDuration(remainingDuration)
+	}
+	fmt.Printf("\r%s %3d%% (%d/%d) ETA %s  %s", prefix, percent, current, total, eta, item)
+}
+
+func finishInlineProgress(message string) {
+	fmt.Print("\r\033[K")
+	fmt.Println(message)
+}
+
+func displayName(a types.Asset) string {
+	if a.OriginalFilename != "" {
+		return a.OriginalFilename
+	}
+	if a.LocalPath != "" {
+		return filepath.Base(a.LocalPath)
+	}
+	return "(unknown)"
+}
+
+func formatShortDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	d = d.Round(time.Second)
+	totalSeconds := int(d.Seconds())
+	minutes := totalSeconds / 60
+	seconds := totalSeconds % 60
+	return fmt.Sprintf("%02d:%02d", minutes, seconds)
 }
 
 func main() {
